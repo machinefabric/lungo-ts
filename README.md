@@ -1,6 +1,6 @@
 # lungo-ts
 
-The support library of the TypeScript/JavaScript packages [lungo](https://github.com/machinefabric/lungo)
+The support library of the TypeScript/JavaScript packages [lungo](https://machinefabric.com/lungo/)
 generates from Lean programs: the wire format between JavaScript and a program's WebAssembly
 module, the host functions the program calls, and the Lean values JavaScript has no type for.
 
