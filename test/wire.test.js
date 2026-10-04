@@ -106,7 +106,8 @@ const parse = (expr) => {
   return t;
 };
 
-test("valid vectors round-trip", () => {
+// TEST0001: valid vectors round-trip
+test("TEST0001 valid vectors round-trip", () => {
   let checked = 0;
   for (const v of vectors.valid) {
     if (v.type.startsWith("19") || v.type.startsWith("1c")) continue;
@@ -122,7 +123,8 @@ test("valid vectors round-trip", () => {
   assert.ok(checked > 40);
 });
 
-test("invalid vectors are rejected", () => {
+// TEST0002: invalid vectors are rejected
+test("TEST0002 invalid vectors are rejected", () => {
   for (const v of vectors.invalid) {
     const t = parse(v.type);
     const r = new L.Reader(hex(v.bytes));
@@ -137,7 +139,8 @@ test("invalid vectors are rejected", () => {
   }
 });
 
-test("values Lean cannot represent are rejected", () => {
+// TEST0003: values Lean cannot represent are rejected
+test("TEST0003 values Lean cannot represent are rejected", () => {
   const w = new L.Writer();
   for (const [t, v] of [
     [L.NAT, -1n],
@@ -154,7 +157,8 @@ test("values Lean cannot represent are rejected", () => {
   }
 });
 
-test("a handle is written only into calls of the program that holds it", () => {
+// TEST0267: a handle is written only into calls of the program that holds it
+test("TEST0267 a handle is written only into calls of the program that holds it", () => {
   // Stand-ins for two loaded programs: each has a handle table of its own.
   const program = (name) => ({ name, cloneHandle: (id) => id + 100n, releaseHandle: () => {} });
   const a = program("a");
