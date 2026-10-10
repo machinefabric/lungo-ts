@@ -120,10 +120,10 @@ export function eio<E, T>(e: Type<E>, t: Type<T>): Returns<T>;
 /** An async program over the operations `op`, ending with a value of `t`. */
 export function asyncProgram<O, T>(op: Type<O>, t: Type<T>): Returns<T>;
 
-/** A call before the host provided a capability the program needs. */
-export class MissingCapabilityError extends Error {
-  constructor(capability: string, operation: string);
-  readonly capability: string;
+/** A call before the host provided a facility the program needs. */
+export class MissingFacilityError extends Error {
+  constructor(facility: string, operation: string);
+  readonly facility: string;
   readonly operation: string;
 }
 
@@ -171,8 +171,8 @@ export interface AssuranceSpecification {
   readonly source: AssuranceSource | null;
 }
 
-/** A capability the host provides. */
-export interface AssuranceCapability {
+/** A facility the host provides. */
+export interface AssuranceFacility {
   readonly name: string;
   readonly id: string;
   readonly form: "extern" | "async";
@@ -184,10 +184,10 @@ export interface AssuranceCapability {
   readonly source: AssuranceSource | null;
 }
 
-/** A proposition assumed, never proved, of the host's implementation of a capability. */
+/** A proposition assumed, never proved, of the host's implementation of a facility. */
 export interface AssuranceAssumption {
   readonly name: string;
-  readonly capability: string;
+  readonly facility: string;
   readonly statement: string;
   readonly package: string | null;
   readonly fingerprint: string;
@@ -202,7 +202,7 @@ export interface AssuranceExport {
   readonly trust: AssuranceTrust;
   readonly claims: readonly string[];
   readonly assumptions: readonly string[];
-  readonly capabilities: readonly string[];
+  readonly facilities: readonly string[];
   readonly roles: readonly string[];
   readonly source: AssuranceSource | null;
 }
@@ -220,7 +220,7 @@ export interface Assurance {
   };
   readonly library: { readonly package: string; readonly schema_version: number } | null;
   readonly specifications: readonly AssuranceSpecification[];
-  readonly capabilities: readonly AssuranceCapability[];
+  readonly facilities: readonly AssuranceFacility[];
   readonly assumptions: readonly AssuranceAssumption[];
   readonly claims: readonly AssuranceClaim[];
   readonly roles: readonly { readonly name: string; readonly role: string; readonly exported: boolean }[];

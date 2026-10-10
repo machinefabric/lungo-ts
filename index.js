@@ -566,15 +566,15 @@ export const io = (t) => ({ kind: "io", value: t });
 export const eio = (e, t) => ({ kind: "eio", error: e, value: t });
 export const asyncProgram = (op, t) => ({ kind: "async", op, value: t });
 
-/** A call before the host provided a capability the program needs; `operation` is one of its
+/** A call before the host provided a facility the program needs; `operation` is one of its
  * operations. */
-export class MissingCapabilityError extends Error {
-  constructor(capability, operation) {
+export class MissingFacilityError extends Error {
+  constructor(facility, operation) {
     super(
-      `the host does not provide the capability ${capability} (its operation ${operation}): provide it in load()'s options.capabilities`,
+      `the host does not provide the facility ${facility} (its operation ${operation}): provide it in load()'s options.facilities`,
     );
-    this.name = "MissingCapabilityError";
-    this.capability = capability;
+    this.name = "MissingFacilityError";
+    this.facility = facility;
     this.operation = operation;
   }
 }
@@ -596,7 +596,7 @@ const ASSURANCE_FIELDS = [
   "provenance",
   "library",
   "specifications",
-  "capabilities",
+  "facilities",
   "assumptions",
   "claims",
   "roles",
