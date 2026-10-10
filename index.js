@@ -559,10 +559,85 @@ export function func(params, result) {
 // Programs
 // ---------------------------------------------------------------------------------------------
 
-/** What a function returns: a value, an `IO` result, or an `EIO ε` result. */
+/** What a function returns: a value, an `IO` result, an `EIO ε` result, or an async program
+ * over the operations `op`. */
 export const value = (t) => ({ kind: "value", value: t });
 export const io = (t) => ({ kind: "io", value: t });
 export const eio = (e, t) => ({ kind: "eio", error: e, value: t });
+export const asyncProgram = (op, t) => ({ kind: "async", op, value: t });
+
+/** A call before the host provided a capability the program needs; `operation` is one of its
+ * operations. */
+export class MissingCapabilityError extends Error {
+  constructor(capability, operation) {
+    super(
+      `the host does not provide the capability ${capability} (its operation ${operation}): provide it in load()'s options.capabilities`,
+    );
+    this.name = "MissingCapabilityError";
+    this.capability = capability;
+    this.operation = operation;
+  }
+}
+
+/** The version of the assurance document this library reads. */
+export const ASSURANCE_SCHEMA_VERSION = 1;
+
+function deepFreeze(v) {
+  if (v && typeof v === "object" && !Object.isFrozen(v)) {
+    Object.freeze(v);
+    for (const x of Object.values(v)) deepFreeze(x);
+  }
+  return v;
+}
+
+const ASSURANCE_FIELDS = [
+  "schema_version",
+  "program",
+  "provenance",
+  "library",
+  "specifications",
+  "capabilities",
+  "assumptions",
+  "claims",
+  "roles",
+  "exports",
+];
+
+/** A program's assurance document (`assurance.json`), checked and frozen: what its Lean code claims
+ * and proves of each export, its trust, and the assumptions about the host its claims are
+ * conditional on. Generated packages export it as `ASSURANCE`. */
+export function parseAssurance(document) {
+  const d = typeof document === "string" ? JSON.parse(document) : structuredClone(document);
+  if (!d || typeof d !== "object" || d.schema_version !== ASSURANCE_SCHEMA_VERSION) {
+    throw new Error(
+      `lungo: assurance schema version ${d?.schema_version}; this library reads version ${ASSURANCE_SCHEMA_VERSION}`,
+    );
+  }
+  const keys = Object.keys(d).sort();
+  if (keys.join() !== [...ASSURANCE_FIELDS].sort().join()) {
+    throw new Error(`lungo: an assurance document has the fields ${keys.join(", ")}`);
+  }
+  return deepFreeze(d);
+}
+
+/** `pending`, or a rejection as soon as `signal` aborts. */
+function abortable(pending, signal) {
+  return new Promise((resolve, reject) => {
+    const onAbort = () => reject(signal.reason);
+    if (signal.aborted) return onAbort();
+    signal.addEventListener("abort", onAbort, { once: true });
+    Promise.resolve(pending).then(
+      (v) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(v);
+      },
+      (e) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(e);
+      },
+    );
+  });
+}
 
 async function nodeWasi() {
   const { WASI } = await import("node:wasi");
@@ -655,17 +730,73 @@ export class Program {
 
   /** Calls entry point `symbol` with type arguments and arguments (`[type, value]` pairs). */
   invoke(symbol, typeArgs, args, returns) {
+    const { status, out } = this.call(symbol, typeArgs, args);
+    return this.result(status, out, returns);
+  }
+
+  /** The status and output of entry point `symbol` called with `typeArgs` and `args`. */
+  call(symbol, typeArgs, args) {
     const w = new Writer(this);
     try {
       w.u32(typeArgs.length);
       for (const t of typeArgs) w.raw(t.expr);
       for (const [t, v] of args) t.encode(w, v);
       const entry = this.exports[symbol];
-      const { status, out } = this.withBuffers(w.finish(), (p, n, b) => entry(p, n, b));
-      return this.result(status, out, returns);
+      return this.withBuffers(w.finish(), (p, n, b) => entry(p, n, b));
     } finally {
       for (const id of w.temps) this.release(id);
     }
+  }
+
+  /** Calls the entry point `symbol` of an async program and runs it to its end: for each operation
+   * it asks, `perform(op)` gives the answer's type and the handler's answer (or a promise of it),
+   * and the program resumes with the answer. A rejection of the handler, or `signal` aborting,
+   * abandons the program: the runtime releases it, and the promise rejects. */
+  async driveAsync(symbol, typeArgs, args, returns, perform, signal) {
+    signal?.throwIfAborted();
+    let { status, out } = this.call(symbol, typeArgs, args);
+    if (status === 1) throw malformed(new TextDecoder().decode(out));
+    if (status !== 0) throw new Error(`lungo: a generated entry point returned status ${status}`);
+    for (;;) {
+      const r = new Reader(out, this);
+      const kind = r.u8();
+      if (kind === 0) {
+        const v = returns.value.decode(r);
+        r.finish();
+        return v;
+      }
+      if (kind !== 1) throw new Error(`lungo: the runtime produced a step of kind ${kind}`);
+      const op = returns.op.decode(r);
+      const resumption = r.u64();
+      r.finish();
+      let resumed = false;
+      try {
+        const [answerType, pending] = perform(op);
+        const answer = signal ? await abortable(pending, signal) : await pending;
+        signal?.throwIfAborted();
+        const w = new Writer(this, true);
+        answerType.encode(w, answer);
+        ({ status, out } = this.withBuffers(w.finish(), (p, n, b) => this.exports.lungo_async_resume(resumption, p, n, b)));
+        resumed = true;
+      } finally {
+        if (!resumed) this.cancelResumption(resumption);
+      }
+      if (status !== 0) {
+        throw new Error(`lungo: resuming an async program returned status ${status}: ${new TextDecoder().decode(out)}`);
+      }
+    }
+  }
+
+  cancelResumption(resumption) {
+    if (this.exports.lungo_async_cancel(resumption) !== 0) {
+      throw new Error(`lungo: resumption ${resumption} was resumed or cancelled already`);
+    }
+  }
+
+  /** The number of async programs waiting for an answer: zero once every async call has
+   * settled. */
+  outstanding() {
+    return Number(this.exports.lungo_async_outstanding());
   }
 
   result(status, out, returns) {

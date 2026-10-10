@@ -112,11 +112,124 @@ export function func<P extends unknown[], R>(
 ): Type<(...args: P) => R>;
 
 export interface Returns<T> {
-  readonly kind: "value" | "io" | "eio";
+  readonly kind: "value" | "io" | "eio" | "async";
 }
 export function value<T>(t: Type<T>): Returns<T>;
 export function io<T>(t: Type<T>): Returns<T>;
 export function eio<E, T>(e: Type<E>, t: Type<T>): Returns<T>;
+/** An async program over the operations `op`, ending with a value of `t`. */
+export function asyncProgram<O, T>(op: Type<O>, t: Type<T>): Returns<T>;
+
+/** A call before the host provided a capability the program needs. */
+export class MissingCapabilityError extends Error {
+  constructor(capability: string, operation: string);
+  readonly capability: string;
+  readonly operation: string;
+}
+
+/** Where a declaration is, relative to its Lake package. */
+export interface AssuranceSource {
+  readonly package: string;
+  readonly file: string;
+  readonly start: { readonly line: number; readonly column: number } | null;
+  readonly end: { readonly line: number; readonly column: number } | null;
+}
+
+/** The code an export's proofs do not cover. */
+export interface AssuranceTrust {
+  readonly axioms: readonly string[];
+  readonly depends_on_sorry: boolean;
+  readonly unsafe_dependencies: readonly string[];
+  readonly partial_dependencies: readonly string[];
+  readonly extern_dependencies: readonly string[];
+}
+
+/** A theorem (its name is the claim's) proving that its subjects stand in a relation to its
+ * specifications. */
+export interface AssuranceClaim {
+  readonly name: string;
+  readonly relation: string;
+  readonly subjects: readonly string[];
+  readonly specifications: readonly string[];
+  readonly statement: string;
+  readonly status: "proved" | "incomplete";
+  readonly evidence_trust: { readonly axioms: readonly string[]; readonly depends_on_sorry: boolean };
+  /** What the claim assumes of the host, unproved. */
+  readonly assumptions: readonly string[];
+  readonly package: string | null;
+  readonly fingerprint: string;
+  readonly source: AssuranceSource | null;
+}
+
+/** A specification the program's claims cite. */
+export interface AssuranceSpecification {
+  readonly name: string;
+  readonly kind: string;
+  readonly statement: string;
+  readonly package: string | null;
+  readonly fingerprint: string;
+  readonly source: AssuranceSource | null;
+}
+
+/** A capability the host provides. */
+export interface AssuranceCapability {
+  readonly name: string;
+  readonly id: string;
+  readonly form: "extern" | "async";
+  readonly op_type: string | null;
+  readonly operations: readonly { readonly name: string; readonly symbol: string | null; readonly fingerprint: string | null }[];
+  readonly assumptions: readonly string[];
+  readonly package: string | null;
+  readonly fingerprint: string;
+  readonly source: AssuranceSource | null;
+}
+
+/** A proposition assumed, never proved, of the host's implementation of a capability. */
+export interface AssuranceAssumption {
+  readonly name: string;
+  readonly capability: string;
+  readonly statement: string;
+  readonly package: string | null;
+  readonly fingerprint: string;
+  readonly source: AssuranceSource | null;
+}
+
+/** What one export is, does and depends on. */
+export interface AssuranceExport {
+  readonly name: string;
+  readonly module: string;
+  readonly async: boolean;
+  readonly trust: AssuranceTrust;
+  readonly claims: readonly string[];
+  readonly assumptions: readonly string[];
+  readonly capabilities: readonly string[];
+  readonly roles: readonly string[];
+  readonly source: AssuranceSource | null;
+}
+
+/** A program's assurance document (`assurance.json`). */
+export interface Assurance {
+  readonly schema_version: 1;
+  readonly program: string;
+  readonly provenance: {
+    readonly lean_version: string;
+    readonly lean_githash: string;
+    readonly lungo_version: string;
+    readonly bir_version: number;
+    readonly runtime_abi: number;
+  };
+  readonly library: { readonly package: string; readonly schema_version: number } | null;
+  readonly specifications: readonly AssuranceSpecification[];
+  readonly capabilities: readonly AssuranceCapability[];
+  readonly assumptions: readonly AssuranceAssumption[];
+  readonly claims: readonly AssuranceClaim[];
+  readonly roles: readonly { readonly name: string; readonly role: string; readonly exported: boolean }[];
+  readonly exports: readonly AssuranceExport[];
+}
+
+export const ASSURANCE_SCHEMA_VERSION: 1;
+/** Checks and freezes an assurance document. */
+export function parseAssurance(document: string | object): Assurance;
 
 /** A WASI implementation for a program module. */
 export interface Wasi {
@@ -129,6 +242,16 @@ export class Program {
   static load(module: WebAssembly.Module | BufferSource, options?: { wasi?: Wasi }): Promise<Program>;
   types(symbol: string): number;
   invoke<T>(symbol: string, typeArgs: Type<unknown>[], args: [Type<any>, unknown][], returns: Returns<T>): T;
+  driveAsync<T>(
+    symbol: string,
+    typeArgs: Type<unknown>[],
+    args: [Type<any>, unknown][],
+    returns: Returns<T>,
+    perform: (op: any) => [Type<any>, unknown],
+    signal?: AbortSignal,
+  ): Promise<T>;
+  /** The number of async programs waiting for an answer. */
+  outstanding(): number;
   hostExtern(setSymbol: string, index: number, params: Type<any>[], returns: Returns<any>, f: (...args: any[]) => unknown): void;
   runMain(symbol: string, args: string[]): number;
 }
