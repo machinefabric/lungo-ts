@@ -590,18 +590,107 @@ function deepFreeze(v) {
   return v;
 }
 
-const ASSURANCE_FIELDS = [
-  "schema_version",
-  "program",
-  "provenance",
-  "library",
-  "specifications",
-  "facilities",
-  "assumptions",
-  "claims",
-  "roles",
-  "exports",
-];
+// The schema of the document: each object's fields and the type of each. A reader refuses a field
+// it does not know and one it misses, as lungo's other readers do.
+const nullable = (shape) => ({ nullable: shape });
+const arrayOf = (shape) => ({ array: shape });
+const STRINGS = arrayOf("string");
+const POSITION = { line: "number", column: "number" };
+const SOURCE = nullable({ package: "string", file: "string", start: nullable(POSITION), end: nullable(POSITION) });
+const ASSURANCE_SCHEMA = {
+  schema_version: "number",
+  program: "string",
+  provenance: {
+    lean_version: "string",
+    lean_githash: "string",
+    lungo_version: "string",
+    bir_version: "number",
+    runtime_abi: "number",
+  },
+  library: nullable({ package: "string", schema_version: "number" }),
+  specifications: arrayOf({
+    name: "string",
+    kind: "string",
+    statement: "string",
+    definition: nullable("string"),
+    package: nullable("string"),
+    fingerprint: "string",
+    source: SOURCE,
+  }),
+  facilities: arrayOf({
+    name: "string",
+    id: "string",
+    form: "string",
+    op_type: nullable("string"),
+    operations: arrayOf({ name: "string", symbol: nullable("string"), fingerprint: nullable("string") }),
+    assumptions: STRINGS,
+    package: nullable("string"),
+    fingerprint: "string",
+    source: SOURCE,
+  }),
+  assumptions: arrayOf({
+    name: "string",
+    facility: "string",
+    statement: "string",
+    definition: nullable("string"),
+    package: nullable("string"),
+    fingerprint: "string",
+    source: SOURCE,
+  }),
+  claims: arrayOf({
+    name: "string",
+    relation: "string",
+    subjects: STRINGS,
+    specifications: STRINGS,
+    statement: "string",
+    status: "string",
+    evidence_trust: { axioms: STRINGS, depends_on_sorry: "boolean" },
+    assumptions: STRINGS,
+    package: nullable("string"),
+    fingerprint: "string",
+    source: SOURCE,
+  }),
+  roles: arrayOf({ name: "string", role: "string", exported: "boolean" }),
+  exports: arrayOf({
+    name: "string",
+    module: "string",
+    async: "boolean",
+    trust: {
+      axioms: STRINGS,
+      depends_on_sorry: "boolean",
+      unsafe_dependencies: STRINGS,
+      partial_dependencies: STRINGS,
+      extern_dependencies: STRINGS,
+    },
+    claims: STRINGS,
+    assumptions: STRINGS,
+    facilities: STRINGS,
+    roles: STRINGS,
+    source: SOURCE,
+  }),
+};
+
+/** Throws unless `v` has `shape`; `at` names where it is in the document. */
+function checkShape(v, shape, at) {
+  const fail = (what) => {
+    throw new Error(`lungo: the assurance document's ${at} ${what}`);
+  };
+  if (typeof shape === "string") {
+    if (typeof v !== shape) fail(`is not a ${shape}`);
+  } else if ("nullable" in shape) {
+    if (v !== null) checkShape(v, shape.nullable, at);
+  } else if ("array" in shape) {
+    if (!Array.isArray(v)) fail("is not an array");
+    v.forEach((x, i) => checkShape(x, shape.array, `${at}[${i}]`));
+  } else {
+    if (!v || typeof v !== "object" || Array.isArray(v)) fail("is not an object");
+    for (const k of Object.keys(v)) if (!(k in shape)) fail(`has the field ${k}, which this library does not know`);
+    for (const [k, s] of Object.entries(shape)) {
+      if (!(k in v)) fail(`lacks the field ${k}`);
+      checkShape(v[k], s, `${at}.${k}`);
+    }
+  }
+}
 
 /** A program's assurance document (`assurance.json`), checked and frozen: what its Lean code claims
  * and proves of each export, its trust, and the assumptions about the host its claims are
@@ -613,10 +702,7 @@ export function parseAssurance(document) {
       `lungo: assurance schema version ${d?.schema_version}; this library reads version ${ASSURANCE_SCHEMA_VERSION}`,
     );
   }
-  const keys = Object.keys(d).sort();
-  if (keys.join() !== [...ASSURANCE_FIELDS].sort().join()) {
-    throw new Error(`lungo: an assurance document has the fields ${keys.join(", ")}`);
-  }
+  checkShape(d, ASSURANCE_SCHEMA, "document");
   return deepFreeze(d);
 }
 

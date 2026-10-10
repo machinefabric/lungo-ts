@@ -166,6 +166,8 @@ export interface AssuranceSpecification {
   readonly name: string;
   readonly kind: string;
   readonly statement: string;
+  /** The body, as Lean prints it, when the declaration is a definition. */
+  readonly definition: string | null;
   readonly package: string | null;
   readonly fingerprint: string;
   readonly source: AssuranceSource | null;
@@ -189,6 +191,8 @@ export interface AssuranceAssumption {
   readonly name: string;
   readonly facility: string;
   readonly statement: string;
+  /** The body, as Lean prints it, when the declaration is a definition. */
+  readonly definition: string | null;
   readonly package: string | null;
   readonly fingerprint: string;
   readonly source: AssuranceSource | null;
@@ -228,7 +232,8 @@ export interface Assurance {
 }
 
 export const ASSURANCE_SCHEMA_VERSION: 1;
-/** Checks and freezes an assurance document. */
+/** Checks an assurance document against its schema (every field, of its type, and no other)
+ * and freezes it. */
 export function parseAssurance(document: string | object): Assurance;
 
 /** A WASI implementation for a program module. */
